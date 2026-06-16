@@ -1,0 +1,29 @@
+name: Deploy naar ai.cpu.nl
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ai.cpu.nl
+          port: 22822
+          username: agendastudio
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/domains/agenda.studiocultura.nl/public_html
+            git pull origin main
+            if [ -f composer.phar ]; then
+              php composer.phar install --no-dev --optimize-autoloader
+            else
+              composer install --no-dev --optimize-autoloader 2>/dev/null || \
+              php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && \
+              php composer-setup.php && \
+              php composer.phar install --no-dev --optimize-autoloader
+            fi
+            echo "Deploy klaar op $(date)"
