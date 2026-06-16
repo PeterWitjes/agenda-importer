@@ -22,11 +22,22 @@ function caldav_request(string $method, string $url, string $body, string $user,
         CURLOPT_TIMEOUT        => 20,
         CURLOPT_HEADER         => true,
     ]);
-    $resp  = curl_exec($ch);
-    $code  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $hSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    $resp     = curl_exec($ch);
+    $code     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $hSize    = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     curl_close($ch);
-    return ['code' => $code, 'body' => substr($resp, $hSize)];
+    return ['code' => $code, 'body' => substr($resp, $hSize), 'final_url' => $finalUrl];
+}
+
+function base_url(string $url): string {
+    $p = parse_url($url);
+    return $p['scheme'] . '://' . $p['host'];
+}
+
+function to_absolute(string $href, string $base): string {
+    if (str_starts_with($href, 'http')) return $href;
+    return $base . $href;
 }
 
 // Stap 1: principal URL
@@ -37,10 +48,12 @@ $resp = caldav_request('PROPFIND', 'https://caldav.icloud.com/', $xml, $user, $p
 if ($resp['code'] === 401) die(json_encode(['success' => false, 'message' => 'Authenticatie mislukt. Controleer je Apple ID en app-wachtwoord.']));
 if ($resp['code'] >= 400) die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . ').']));
 
+$serverBase = base_url($resp['final_url']);
+
 preg_match('#<current-user-principal[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
 $principalUrl = $m[1] ?? null;
 if (!$principalUrl) die(json_encode(['success' => false, 'message' => 'Kon principal URL niet ophalen.']));
-if (!str_starts_with($principalUrl, 'http')) $principalUrl = 'https://caldav.icloud.com' . $principalUrl;
+$principalUrl = to_absolute($principalUrl, $serverBase);
 
 // Stap 2: calendar home
 $xml = '<?xml version="1.0" encoding="UTF-8"?>
@@ -48,11 +61,12 @@ $xml = '<?xml version="1.0" encoding="UTF-8"?>
   <d:prop><cal:calendar-home-set/></d:prop>
 </d:propfind>';
 $resp = caldav_request('PROPFIND', $principalUrl, $xml, $user, $pass, ['Depth: 0']);
+$serverBase = base_url($resp['final_url']);
 
 preg_match('#<calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
 $calHome = $m[1] ?? null;
 if (!$calHome) die(json_encode(['success' => false, 'message' => 'Kon calendar home niet ophalen.']));
-if (!str_starts_with($calHome, 'http')) $calHome = 'https://caldav.icloud.com' . $calHome;
+$calHome = to_absolute($calHome, $serverBase);
 
 // Stap 3: agenda's ophalen
 $xml = '<?xml version="1.0" encoding="UTF-8"?>

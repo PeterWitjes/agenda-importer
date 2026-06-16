@@ -87,26 +87,30 @@ function caldav_request(string $method, string $url, string $body, string $user,
         CURLOPT_CUSTOMREQUEST  => $method,
         CURLOPT_USERPWD        => "$user:$pass",
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER     => array_merge([
-            'Content-Type: text/xml; charset=utf-8',
-        ], $extraHeaders),
+        CURLOPT_HTTPHEADER     => array_merge(['Content-Type: text/xml; charset=utf-8'], $extraHeaders),
         CURLOPT_POSTFIELDS     => $body,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_TIMEOUT        => 20,
         CURLOPT_HEADER         => true,
     ]);
-    $resp   = curl_exec($ch);
-    $code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $hSize  = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-    $error  = curl_error($ch);
+    $resp     = curl_exec($ch);
+    $code     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $hSize    = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    $error    = curl_error($ch);
     curl_close($ch);
-    return [
-        'code'    => $code,
-        'headers' => substr($resp, 0, $hSize),
-        'body'    => substr($resp, $hSize),
-        'error'   => $error,
-    ];
+    return ['code' => $code, 'body' => substr($resp, $hSize), 'final_url' => $finalUrl, 'error' => $error];
+}
+
+function base_url(string $url): string {
+    $p = parse_url($url);
+    return $p['scheme'] . '://' . $p['host'];
+}
+
+function to_absolute(string $href, string $base): string {
+    if (str_starts_with($href, 'http')) return $href;
+    return $base . $href;
 }
 
 // Stap 1: Principal URL ophalen
@@ -117,41 +121,34 @@ $principalXml = '<?xml version="1.0" encoding="UTF-8"?>
   </d:prop>
 </d:propfind>';
 
-$resp = caldav_request('PROPFIND', $caldavBase . '/', $principalXml, ICLOUD_USER, $icloudPass, ['Depth: 0', 'Prefer: return-minimal']);
+$resp = caldav_request('PROPFIND', $caldavBase . '/', $principalXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
 if ($resp['code'] === 401) {
     die(json_encode(['success' => false, 'message' => 'iCloud authenticatie mislukt. Controleer je Apple ID en app-specifiek wachtwoord.']));
 }
 if ($resp['code'] >= 400) {
-    die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . '). Fout: ' . substr(strip_tags($resp['body']), 0, 200)]));
+    die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . ').']));
 }
 
-// Principal URL uit response halen
+$serverBase = base_url($resp['final_url']);
+
 preg_match('#<current-user-principal[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
 $principalUrl = $m[1] ?? null;
-if (!$principalUrl) {
-    die(json_encode(['success' => false, 'message' => 'Kon iCloud principal URL niet ophalen.']));
-}
-if (!str_starts_with($principalUrl, 'http')) {
-    $principalUrl = $caldavBase . $principalUrl;
-}
+if (!$principalUrl) die(json_encode(['success' => false, 'message' => 'Kon iCloud principal URL niet ophalen.']));
+$principalUrl = to_absolute($principalUrl, $serverBase);
 
 // Stap 2: Calendar home ophalen
 $homeXml = '<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav">
-  <d:prop>
-    <cal:calendar-home-set/>
-  </d:prop>
+  <d:prop><cal:calendar-home-set/></d:prop>
 </d:propfind>';
 
-$resp = caldav_request('PROPFIND', $principalUrl, $homeXml, ICLOUD_USER, $icloudPass, ['Depth: 0', 'Prefer: return-minimal']);
+$resp = caldav_request('PROPFIND', $principalUrl, $homeXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
+$serverBase = base_url($resp['final_url']);
+
 preg_match('#<calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
 $calHome = $m[1] ?? null;
-if (!$calHome) {
-    die(json_encode(['success' => false, 'message' => 'Kon iCloud calendar home niet ophalen.']));
-}
-if (!str_starts_with($calHome, 'http')) {
-    $calHome = $caldavBase . $calHome;
-}
+if (!$calHome) die(json_encode(['success' => false, 'message' => 'Kon iCloud calendar home niet ophalen.']));
+$calHome = to_absolute($calHome, $serverBase);
 
 // Stap 3: Agenda zoeken op naam
 $listXml = '<?xml version="1.0" encoding="UTF-8"?>
@@ -171,7 +168,7 @@ foreach ($matches[1] as $block) {
     if (preg_match('#<d:href[^>]*>([^<]+)</d:href>#i', $block, $hm) &&
         preg_match('#<d:displayname[^>]*>([^<]*)</d:displayname>#i', $block, $nm)) {
         if (strcasecmp(trim($nm[1]), $calendarName) === 0) {
-            $calendarUrl = trim($hm[1]);
+            $calendarUrl = to_absolute(trim($hm[1]), $serverBase);
             break;
         }
     }
@@ -186,9 +183,6 @@ if (!$calendarUrl) {
         }
     }
     die(json_encode(['success' => false, 'message' => "Agenda '$calendarName' niet gevonden. Beschikbare agenda's: " . implode(', ', array_filter($foundNames))]));
-}
-if (!str_starts_with($calendarUrl, 'http')) {
-    $calendarUrl = $caldavBase . $calendarUrl;
 }
 
 // --- Stap 4: Events aanmaken ---
