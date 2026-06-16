@@ -7,13 +7,12 @@ require_once __DIR__ . '/vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 // --- Config ---
-define('ICLOUD_USER', 'peterwitjes@mac.com');
-// Wachtwoord komt uit het formulier (app-specifiek wachtwoord)
+define('ICLOUD_USER', trim($_POST['icloud_user'] ?? ''));
 $icloudPass    = trim($_POST['icloud_pass'] ?? '');
 $calendarName  = trim($_POST['calendar_name'] ?? 'Activiteitenrooster');
 
-if (!$icloudPass) {
-    die(json_encode(['success' => false, 'message' => 'Geen iCloud wachtwoord opgegeven.']));
+if (!ICLOUD_USER || !$icloudPass) {
+    die(json_encode(['success' => false, 'message' => 'Vul je iCloud gebruikersnaam en wachtwoord in.']));
 }
 
 if (empty($_FILES['file']['tmp_name'])) {

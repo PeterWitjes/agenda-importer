@@ -137,6 +137,12 @@ h1 {
         <div class="file-chosen" id="fileChosen"></div>
 
         <div class="config-section">
+            <label>iCloud gebruikersnaam (Apple ID)</label>
+            <input type="email" name="icloud_user" id="icloudUser"
+                   placeholder="naam@mac.com"
+                   value="peterwitjes@mac.com"
+                   autocomplete="username">
+
             <label>iCloud wachtwoord (app-specifiek)</label>
             <input type="password" name="icloud_pass" id="icloudPass"
                    placeholder="xxxx-xxxx-xxxx-xxxx"
