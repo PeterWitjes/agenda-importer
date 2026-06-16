@@ -5,6 +5,7 @@ error_reporting(0);
 require_once __DIR__ . '/vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
 // --- Config ---
 define('ICLOUD_USER', trim($_POST['icloud_user'] ?? ''));
@@ -23,39 +24,40 @@ if (empty($_FILES['file']['tmp_name'])) {
 try {
     $spreadsheet = IOFactory::load($_FILES['file']['tmp_name']);
     $sheet = $spreadsheet->getActiveSheet();
-    $rows  = $sheet->toArray(null, true, true, false);
+    $rows  = $sheet->toArray(null, false, false, false);
 } catch (Exception $e) {
     die(json_encode(['success' => false, 'message' => 'Kon Excel niet lezen: ' . $e->getMessage()]));
 }
 
+function excelToDateTime($val): ?\DateTime {
+    if ($val === null || $val === '') return null;
+    if (is_numeric($val) && $val > 1) {
+        try {
+            return ExcelDate::excelToDateTimeObject((float)$val);
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+    return null;
+}
+
 // --- Activiteiten parsen ---
-// Structuur: kolom 0=organisatie, 1=startdatum/tijd, 4=starttijd, 6=eindtijd, 7=locatie, 8=activiteit, 12=personen, 13=genre
+// Structuur: kolom 0=organisatie, 1=startdatum/tijd, 6=eindtijd, 7=locatie, 8=activiteit, 12=personen, 13=genre
 $events = [];
 foreach ($rows as $row) {
     $organisatie = trim($row[0] ?? '');
-    $start       = $row[1] ?? null;
-    $eind        = $row[6] ?? null;
+    $start       = excelToDateTime($row[1] ?? null);
+    $eind        = excelToDateTime($row[6] ?? null);
     $locatie     = trim($row[7] ?? '');
     $activiteit  = trim($row[8] ?? '');
     $personen    = $row[12] ?? null;
     $genre       = trim($row[13] ?? '');
 
     // Sla lege rijen en header-rijen over
-    if (!$activiteit || !$start || !is_object($start)) continue;
+    if (!$activiteit || !$start) continue;
     if (in_array(strtolower($activiteit), ['activiteit', 'nan', ''])) continue;
-    if (!($start instanceof \DateTime || $start instanceof \DateTimeImmutable)) {
-        if (is_string($start) && strtotime($start)) {
-            $start = new DateTime($start);
-        } else {
-            continue;
-        }
-    }
-    if (!($eind instanceof \DateTime || $eind instanceof \DateTimeImmutable)) {
-        if (is_string($eind) && strtotime($eind)) {
-            $eind = new DateTime($eind);
-        } else {
-            $eind = (clone $start)->modify('+1 hour');
-        }
+    if (!$eind) {
+        $eind = (clone $start)->modify('+1 hour');
     }
 
     $events[] = [
