@@ -43,7 +43,7 @@ function to_absolute(string $href, string $base): string {
 // Stap 1: principal URL
 $xml = '<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>';
-$resp = caldav_request('PROPFIND', 'https://caldav.icloud.com/', $xml, $user, $pass, ['Depth: 0']);
+$resp = caldav_request('PROPFIND', 'https://caldav.icloud.com/.well-known/caldav', $xml, $user, $pass, ['Depth: 0']);
 
 if ($resp['code'] === 401) die(json_encode(['success' => false, 'message' => 'Authenticatie mislukt. Controleer je Apple ID en app-wachtwoord.']));
 if ($resp['code'] >= 400) die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . ').']));

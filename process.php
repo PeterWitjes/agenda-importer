@@ -121,7 +121,7 @@ $principalXml = '<?xml version="1.0" encoding="UTF-8"?>
   </d:prop>
 </d:propfind>';
 
-$resp = caldav_request('PROPFIND', $caldavBase . '/', $principalXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
+$resp = caldav_request('PROPFIND', $caldavBase . '/.well-known/caldav', $principalXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
 if ($resp['code'] === 401) {
     die(json_encode(['success' => false, 'message' => 'iCloud authenticatie mislukt. Controleer je Apple ID en app-specifiek wachtwoord.']));
 }
