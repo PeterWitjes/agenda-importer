@@ -113,6 +113,13 @@ function to_absolute(string $href, string $base): string {
     return $base . $href;
 }
 
+function xml_val(string $tag, string $xml): ?string {
+    if (preg_match('#<(?:[^:>]+:)?' . preg_quote($tag, '#') . '[^>]*>(.*?)</(?:[^:>]+:)?' . preg_quote($tag, '#') . '>#si', $xml, $m)) {
+        return trim($m[1]);
+    }
+    return null;
+}
+
 // Stap 1: Principal URL ophalen
 $principalXml = '<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:">
@@ -131,8 +138,8 @@ if ($resp['code'] >= 400) {
 
 $serverBase = base_url($resp['final_url']);
 
-preg_match('#<current-user-principal[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
-$principalUrl = $m[1] ?? null;
+$principalRaw = xml_val('current-user-principal', $resp['body']);
+$principalUrl = $principalRaw ? xml_val('href', $principalRaw) : null;
 if (!$principalUrl) die(json_encode(['success' => false, 'message' => 'Kon iCloud principal URL niet ophalen.']));
 $principalUrl = to_absolute($principalUrl, $serverBase);
 
@@ -145,8 +152,8 @@ $homeXml = '<?xml version="1.0" encoding="UTF-8"?>
 $resp = caldav_request('PROPFIND', $principalUrl, $homeXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
 $serverBase = base_url($resp['final_url']);
 
-preg_match('#<calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
-$calHome = $m[1] ?? null;
+$calHomeRaw = xml_val('calendar-home-set', $resp['body']);
+$calHome    = $calHomeRaw ? xml_val('href', $calHomeRaw) : null;
 if (!$calHome) die(json_encode(['success' => false, 'message' => 'Kon iCloud calendar home niet ophalen.']));
 $calHome = to_absolute($calHome, $serverBase);
 
@@ -161,28 +168,25 @@ $listXml = '<?xml version="1.0" encoding="UTF-8"?>
 
 $resp = caldav_request('PROPFIND', $calHome, $listXml, ICLOUD_USER, $icloudPass, ['Depth: 1']);
 
-// Calendars parsen
-preg_match_all('#<d:response[^>]*>(.*?)</d:response>#s', $resp['body'], $matches);
+// Calendars parsen — namespace-agnostisch
+preg_match_all('#<(?:[^:>]+:)?response[^>]*>(.*?)</(?:[^:>]+:)?response>#si', $resp['body'], $matches);
 $calendarUrl = null;
 foreach ($matches[1] as $block) {
-    if (preg_match('#<d:href[^>]*>([^<]+)</d:href>#i', $block, $hm) &&
-        preg_match('#<d:displayname[^>]*>([^<]*)</d:displayname>#i', $block, $nm)) {
-        if (strcasecmp(trim($nm[1]), $calendarName) === 0) {
-            $calendarUrl = to_absolute(trim($hm[1]), $serverBase);
-            break;
-        }
+    $href = xml_val('href', $block);
+    $name = xml_val('displayname', $block);
+    if ($href && $name && strcasecmp(trim($name), $calendarName) === 0) {
+        $calendarUrl = to_absolute(trim($href), $serverBase);
+        break;
     }
 }
 
 if (!$calendarUrl) {
-    // Verzamel gevonden namen voor debug
     $foundNames = [];
     foreach ($matches[1] as $block) {
-        if (preg_match('#<d:displayname[^>]*>([^<]*)</d:displayname>#i', $block, $nm)) {
-            $foundNames[] = trim($nm[1]);
-        }
+        $n = xml_val('displayname', $block);
+        if ($n) $foundNames[] = $n;
     }
-    die(json_encode(['success' => false, 'message' => "Agenda '$calendarName' niet gevonden. Beschikbare agenda's: " . implode(', ', array_filter($foundNames))]));
+    die(json_encode(['success' => false, 'message' => "Agenda '$calendarName' niet gevonden. Beschikbaar: " . implode(', ', array_filter($foundNames))]));
 }
 
 // --- Stap 4: Events aanmaken ---

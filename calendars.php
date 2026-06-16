@@ -40,7 +40,15 @@ function to_absolute(string $href, string $base): string {
     return $base . $href;
 }
 
-// Stap 1: principal URL
+// Pakt tag-waarde ongeacht namespace prefix (d:href, href, D:href etc.)
+function xml_val(string $tag, string $xml): ?string {
+    if (preg_match('#<(?:[^:>]+:)?' . preg_quote($tag, '#') . '[^>]*>(.*?)</(?:[^:>]+:)?' . preg_quote($tag, '#') . '>#si', $xml, $m)) {
+        return trim($m[1]);
+    }
+    return null;
+}
+
+// Stap 1: principal URL via .well-known
 $xml = '<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>';
 $resp = caldav_request('PROPFIND', 'https://caldav.icloud.com/.well-known/caldav', $xml, $user, $pass, ['Depth: 0']);
@@ -48,23 +56,23 @@ $resp = caldav_request('PROPFIND', 'https://caldav.icloud.com/.well-known/caldav
 if ($resp['code'] === 401) die(json_encode(['success' => false, 'message' => 'Authenticatie mislukt. Controleer je Apple ID en app-wachtwoord.']));
 if ($resp['code'] >= 400) die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . ').']));
 
-$serverBase = base_url($resp['final_url']);
-
-preg_match('#<current-user-principal[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
-$principalUrl = $m[1] ?? null;
+$serverBase   = base_url($resp['final_url']);
+$principalUrl = xml_val('current-user-principal', $resp['body']);
+// current-user-principal bevat een <href> erbinnen
+if ($principalUrl) $principalUrl = xml_val('href', $principalUrl);
 if (!$principalUrl) die(json_encode(['success' => false, 'message' => 'Kon principal URL niet ophalen.']));
 $principalUrl = to_absolute($principalUrl, $serverBase);
 
-// Stap 2: calendar home
+// Stap 2: calendar-home-set
 $xml = '<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav">
   <d:prop><cal:calendar-home-set/></d:prop>
 </d:propfind>';
-$resp = caldav_request('PROPFIND', $principalUrl, $xml, $user, $pass, ['Depth: 0']);
+$resp     = caldav_request('PROPFIND', $principalUrl, $xml, $user, $pass, ['Depth: 0']);
 $serverBase = base_url($resp['final_url']);
 
-preg_match('#<calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
-$calHome = $m[1] ?? null;
+$calHomeRaw = xml_val('calendar-home-set', $resp['body']);
+$calHome    = $calHomeRaw ? xml_val('href', $calHomeRaw) : null;
 if (!$calHome) die(json_encode(['success' => false, 'message' => 'Kon calendar home niet ophalen.']));
 $calHome = to_absolute($calHome, $serverBase);
 
@@ -73,26 +81,30 @@ $xml = '<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav">
   <d:prop>
     <d:displayname/>
-    <cal:calendar-description/>
     <d:resourcetype/>
   </d:prop>
 </d:propfind>';
 $resp = caldav_request('PROPFIND', $calHome, $xml, $user, $pass, ['Depth: 1']);
 
-preg_match_all('#<d:response[^>]*>(.*?)</d:response>#s', $resp['body'], $matches);
+// Split op <response> blokken (met of zonder namespace prefix)
+preg_match_all('#<(?:[^:>]+:)?response[^>]*>(.*?)</(?:[^:>]+:)?response>#si', $resp['body'], $matches);
 
 $calendars = [];
 foreach ($matches[1] as $block) {
-    // Accepteer alles met een displayname, maar sla principals/inbox/outbox over
-    if (preg_match('#(inbox|outbox|notification|dropbox|freebusy)#i', $block)) continue;
-    if (preg_match('#<d:displayname[^>]*>([^<]+)</d:displayname>#i', $block, $nm)) {
-        $name = trim($nm[1]);
-        if ($name) $calendars[] = $name;
-    }
+    $href = xml_val('href', $block);
+
+    // Sla de calendar home zelf over
+    if (rtrim($href, '/') === rtrim(parse_url($calHome, PHP_URL_PATH), '/')) continue;
+
+    // Sla inbox/outbox/notifications over
+    if (preg_match('#(inbox|outbox|notification|dropbox|freebusy)#i', $href ?? '')) continue;
+
+    $name = xml_val('displayname', $block);
+    if ($name) $calendars[] = $name;
 }
 
 if (empty($calendars)) {
-    die(json_encode(['success' => false, 'message' => 'Debug XML: ' . substr($resp['body'], 0, 1000)]));
+    die(json_encode(['success' => false, 'message' => 'Geen agenda\'s gevonden in iCloud.']));
 }
 
-echo json_encode(['success' => true, 'calendars' => $calendars]);
+echo json_encode(['success' => true, 'calendars' => array_values($calendars)]);
