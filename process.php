@@ -61,11 +61,15 @@ foreach ($rows as $row) {
     }
 
     $events[] = [
-        'uid'         => 'lvp-' . bin2hex(random_bytes(16)),
+        'uid'         => 'lvp-' . md5($start->format('YmdHi') . $activiteit),
         'start'       => $start,
         'end'         => $eind,
         'summary'     => $activiteit,
-        'location'    => $locatie === '0.24' ? 'Zaal 0.24' : $locatie,
+        'location'    => match(trim($locatie)) {
+            '0.24', 'Zaal 0.24' => 'DANS',
+            'Atrium'            => 'ATRIUM',
+            default             => $locatie,
+        },
         'description' => implode(' | ', array_filter([
             $organisatie,
             $personen ? $personen . ' personen' : null,
