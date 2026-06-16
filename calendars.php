@@ -69,14 +69,17 @@ preg_match_all('#<d:response[^>]*>(.*?)</d:response>#s', $resp['body'], $matches
 
 $calendars = [];
 foreach ($matches[1] as $block) {
-    // Alleen echte kalenders (heeft calendar resourcetype)
-    if (!preg_match('#<cal:calendar\s*/>#i', $block) && !preg_match('#<cal:calendar>#i', $block)) continue;
-    if (preg_match('#<d:displayname[^>]*>([^<]*)</d:displayname>#i', $block, $nm)) {
+    // Accepteer alles met een displayname, maar sla principals/inbox/outbox over
+    if (preg_match('#(inbox|outbox|notification|dropbox|freebusy)#i', $block)) continue;
+    if (preg_match('#<d:displayname[^>]*>([^<]+)</d:displayname>#i', $block, $nm)) {
         $name = trim($nm[1]);
         if ($name) $calendars[] = $name;
     }
 }
 
-if (empty($calendars)) die(json_encode(['success' => false, 'message' => 'Geen agenda\'s gevonden in iCloud.']));
+if (empty($calendars)) {
+    // Debug: geef ruwe response terug zodat we kunnen zien wat er binnenkomt
+    die(json_encode(['success' => false, 'message' => 'Geen agenda\'s gevonden. Debug: ' . substr(strip_tags($resp['body']), 0, 500)]));
+}
 
 echo json_encode(['success' => true, 'calendars' => $calendars]);
