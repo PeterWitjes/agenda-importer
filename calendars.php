@@ -92,8 +92,7 @@ foreach ($matches[1] as $block) {
 }
 
 if (empty($calendars)) {
-    // Debug: geef ruwe response terug zodat we kunnen zien wat er binnenkomt
-    die(json_encode(['success' => false, 'message' => 'Geen agenda\'s gevonden. Debug: ' . substr(strip_tags($resp['body']), 0, 500)]));
+    die(json_encode(['success' => false, 'message' => 'Debug XML: ' . substr($resp['body'], 0, 1000)]));
 }
 
 echo json_encode(['success' => true, 'calendars' => $calendars]);
