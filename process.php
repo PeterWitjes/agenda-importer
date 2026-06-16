@@ -200,7 +200,19 @@ if (!$calendarUrl) {
     die(json_encode(['success' => false, 'message' => "Agenda '$calendarName' niet gevonden. Beschikbaar: " . implode(', ', array_filter($foundNames))]));
 }
 
-// --- Stap 4: Events aanmaken ---
+// --- Stap 4: Bestaande events wissen ---
+$cleanXml = '<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:"><d:prop><d:getetag/></d:prop></d:propfind>';
+$cleanResp = caldav_request('PROPFIND', $calendarUrl, $cleanXml, ICLOUD_USER, $icloudPass, ['Depth: 1']);
+
+preg_match_all('#<(?:[^:>]+:)?response[^>]*>(.*?)</(?:[^:>]+:)?response>#si', $cleanResp['body'], $cleanMatches);
+foreach ($cleanMatches[1] as $block) {
+    $href = xml_val('href', $block);
+    if (!$href || !str_ends_with($href, '.ics')) continue;
+    caldav_request('DELETE', to_absolute($href, $serverBase), '', ICLOUD_USER, $icloudPass, []);
+}
+
+// --- Stap 5: Events aanmaken ---
 $added  = 0;
 $errors = [];
 
