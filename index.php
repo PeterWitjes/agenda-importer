@@ -101,6 +101,23 @@ h1 {
 }
 .btn:hover { background: #0066dd; }
 .btn:disabled { background: #b0c8f0; cursor: not-allowed; }
+.btn-secondary {
+    background: #f0f2f5;
+    color: #333;
+    border: 1px solid #dde0e6;
+}
+.btn-secondary:hover { background: #e2e5ea; }
+.btn-secondary:disabled { background: #f5f5f5; color: #aaa; cursor: not-allowed; }
+select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #dde0e6;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    outline: none;
+    cursor: pointer;
+}
 
 #status {
     margin-top: 20px;
@@ -148,9 +165,14 @@ h1 {
                    placeholder="xxxx-xxxx-xxxx-xxxx"
                    autocomplete="current-password">
 
-            <label>Agendanaam in iCal</label>
-            <input type="text" name="calendar_name" id="calendarName"
-                   value="Activiteitenrooster" placeholder="Activiteitenrooster">
+            <button type="button" class="btn btn-secondary" id="loadCalendarsBtn">Laad agenda's uit iCloud</button>
+
+            <div id="calendarPickerWrap" style="display:none; margin-top:14px;">
+                <label>Kies agenda</label>
+                <select name="calendar_name" id="calendarName">
+                    <option value="">— kies een agenda —</option>
+                </select>
+            </div>
         </div>
 
         <button type="submit" class="btn" id="submitBtn" disabled>Importeer in iCloud</button>
@@ -192,10 +214,50 @@ function setFile(file) {
     submitBtn.disabled = false;
 }
 
+document.getElementById('loadCalendarsBtn').addEventListener('click', async () => {
+    const user = document.getElementById('icloudUser').value.trim();
+    const pass = document.getElementById('icloudPass').value.trim();
+    if (!user || !pass) { showStatus('Vul je Apple ID en wachtwoord in.', 'error'); return; }
+
+    const btn = document.getElementById('loadCalendarsBtn');
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
+    showStatus('Agenda\'s ophalen uit iCloud…', 'info');
+
+    const fd = new FormData();
+    fd.append('icloud_user', user);
+    fd.append('icloud_pass', pass);
+
+    try {
+        const resp = await fetch('calendars.php', { method: 'POST', body: fd });
+        const data = await resp.json();
+        if (data.success) {
+            const select = document.getElementById('calendarName');
+            select.innerHTML = '<option value="">— kies een agenda —</option>';
+            data.calendars.forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            });
+            document.getElementById('calendarPickerWrap').style.display = 'block';
+            showStatus('✓ ' + data.calendars.length + ' agenda\'s gevonden.', 'success');
+        } else {
+            showStatus('✗ ' + data.message, 'error');
+        }
+    } catch (err) {
+        showStatus('Verbindingsfout: ' + err.message, 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Laad agenda\'s uit iCloud';
+});
+
 document.getElementById('uploadForm').addEventListener('submit', async e => {
     e.preventDefault();
     const pass = document.getElementById('icloudPass').value.trim();
+    const cal  = document.getElementById('calendarName').value.trim();
     if (!pass) { showStatus('Vul je iCloud app-wachtwoord in.', 'error'); return; }
+    if (!cal)  { showStatus('Kies eerst een agenda via "Laad agenda\'s uit iCloud".', 'error'); return; }
     if (!fileInput.files[0]) { showStatus('Kies eerst een Excel-bestand.', 'error'); return; }
 
     submitBtn.disabled = true;
