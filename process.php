@@ -178,7 +178,14 @@ foreach ($matches[1] as $block) {
 }
 
 if (!$calendarUrl) {
-    die(json_encode(['success' => false, 'message' => "Agenda '$calendarName' niet gevonden in iCloud. Maak hem eerst aan in iCal."]));
+    // Verzamel gevonden namen voor debug
+    $foundNames = [];
+    foreach ($matches[1] as $block) {
+        if (preg_match('#<d:displayname[^>]*>([^<]*)</d:displayname>#i', $block, $nm)) {
+            $foundNames[] = trim($nm[1]);
+        }
+    }
+    die(json_encode(['success' => false, 'message' => "Agenda '$calendarName' niet gevonden. Beschikbare agenda's: " . implode(', ', array_filter($foundNames))]));
 }
 if (!str_starts_with($calendarUrl, 'http')) {
     $calendarUrl = $caldavBase . $calendarUrl;
