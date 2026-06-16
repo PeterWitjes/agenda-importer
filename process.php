@@ -89,7 +89,6 @@ function caldav_request(string $method, string $url, string $body, string $user,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => array_merge([
             'Content-Type: text/xml; charset=utf-8',
-            'Depth: 1',
         ], $extraHeaders),
         CURLOPT_POSTFIELDS     => $body,
         CURLOPT_SSL_VERIFYPEER => true,
@@ -118,12 +117,12 @@ $principalXml = '<?xml version="1.0" encoding="UTF-8"?>
   </d:prop>
 </d:propfind>';
 
-$resp = caldav_request('PROPFIND', $caldavBase . '/', $principalXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
+$resp = caldav_request('PROPFIND', $caldavBase . '/', $principalXml, ICLOUD_USER, $icloudPass, ['Depth: 0', 'Prefer: return-minimal']);
 if ($resp['code'] === 401) {
-    die(json_encode(['success' => false, 'message' => 'iCloud authenticatie mislukt. Controleer je app-specifiek wachtwoord.']));
+    die(json_encode(['success' => false, 'message' => 'iCloud authenticatie mislukt. Controleer je Apple ID en app-specifiek wachtwoord.']));
 }
 if ($resp['code'] >= 400) {
-    die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . ').']));
+    die(json_encode(['success' => false, 'message' => 'iCloud verbinding mislukt (HTTP ' . $resp['code'] . '). Fout: ' . substr(strip_tags($resp['body']), 0, 200)]));
 }
 
 // Principal URL uit response halen
@@ -144,7 +143,7 @@ $homeXml = '<?xml version="1.0" encoding="UTF-8"?>
   </d:prop>
 </d:propfind>';
 
-$resp = caldav_request('PROPFIND', $principalUrl, $homeXml, ICLOUD_USER, $icloudPass, ['Depth: 0']);
+$resp = caldav_request('PROPFIND', $principalUrl, $homeXml, ICLOUD_USER, $icloudPass, ['Depth: 0', 'Prefer: return-minimal']);
 preg_match('#<calendar-home-set[^>]*>\s*<href[^>]*>([^<]+)</href>#i', $resp['body'], $m);
 $calHome = $m[1] ?? null;
 if (!$calHome) {
@@ -163,7 +162,7 @@ $listXml = '<?xml version="1.0" encoding="UTF-8"?>
   </d:prop>
 </d:propfind>';
 
-$resp = caldav_request('PROPFIND', $calHome, $listXml, ICLOUD_USER, $icloudPass);
+$resp = caldav_request('PROPFIND', $calHome, $listXml, ICLOUD_USER, $icloudPass, ['Depth: 1']);
 
 // Calendars parsen
 preg_match_all('#<d:response[^>]*>(.*?)</d:response>#s', $resp['body'], $matches);
