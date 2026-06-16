@@ -238,6 +238,7 @@ document.getElementById('loadCalendarsBtn').addEventListener('click', async () =
                 const opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
+                if (name === 'Cultura Dans en Atrium') opt.selected = true;
                 select.appendChild(opt);
             });
             document.getElementById('calendarPickerWrap').style.display = 'block';
