@@ -61,7 +61,7 @@ foreach ($rows as $row) {
     }
 
     $events[] = [
-        'uid'         => uniqid('lvp-', true) . '@agenda.studiocultura.nl',
+        'uid'         => 'lvp-' . bin2hex(random_bytes(16)),
         'start'       => $start,
         'end'         => $eind,
         'summary'     => $activiteit,
@@ -82,12 +82,19 @@ if (empty($events)) {
 $caldavBase = 'https://caldav.icloud.com';
 
 function caldav_request(string $method, string $url, string $body, string $user, string $pass, array $extraHeaders = []): array {
+    // extraHeaders overschrijven defaults (geen dubbele Content-Type)
+    $defaults = ['Content-Type: text/xml; charset=utf-8'];
+    $headerMap = [];
+    foreach (array_merge($defaults, $extraHeaders) as $h) {
+        [$k] = explode(':', $h, 2);
+        $headerMap[strtolower(trim($k))] = $h;
+    }
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST  => $method,
         CURLOPT_USERPWD        => "$user:$pass",
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER     => array_merge(['Content-Type: text/xml; charset=utf-8'], $extraHeaders),
+        CURLOPT_HTTPHEADER     => array_values($headerMap),
         CURLOPT_POSTFIELDS     => $body,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_FOLLOWLOCATION => true,
